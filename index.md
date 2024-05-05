@@ -1,4 +1,4 @@
 ---
-title: Welcome to my blog
+title: For better neko
 ---
-# This site is for testing purposes
+# Huanghe's blog
