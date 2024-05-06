@@ -1,4 +1,3 @@
 ---
-title: For better neko
+title: Why touch grass when you can soar above it?
 ---
-# Huanghe's blog
