@@ -1,6 +1,10 @@
 ---
-title: Huanghe's blog
-description: Why touch grass when you can soar above it?
+layout: default
 ---
-# Testing114514
-Do you like van you see?
+
+# My Blog Posts
+
+{% for post in site.posts %}
+  <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
+  <p>{{ post.excerpt }}</p>
+{% endfor %}
