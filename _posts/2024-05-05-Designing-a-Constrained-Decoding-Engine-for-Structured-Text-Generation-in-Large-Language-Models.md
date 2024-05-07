@@ -10,7 +10,7 @@ Structured text generation means to create text in specific formats, such as JSO
 
 While it might seem straightforward, implementing constrained decoding correctly is challenging. Consider a *simple* scenario where we need the model to output in the format `XXXXX*[YYYY]*`. Here, `XXXXX` should not include `*[` and `YYYY` should exclude both `*[` and `]*`. It is tempting to quickly write:
 
-```Python
+```python
 # some logic
 in_y = False
 if last_token == "*[":
@@ -30,7 +30,7 @@ Unfortunately, this code fails for several reasons:
 
 The correct version:
 
-```Python
+```python
 # some logic
 
 for token in vocabulary:
