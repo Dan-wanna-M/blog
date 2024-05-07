@@ -4,3 +4,4 @@ description: Why touch grass when you can soar above it?
 title: Huanghe's blog
 url: "https://Dan-Wanna-M.github.io"  # Change 'username' to your GitHub username
 baseurl: "/blog"  # Change 'my-project' to your repository's name
+highlighter: rouge
