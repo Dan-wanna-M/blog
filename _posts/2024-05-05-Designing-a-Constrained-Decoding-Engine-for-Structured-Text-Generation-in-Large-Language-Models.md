@@ -8,7 +8,7 @@ Structured text generation means to create text in specific formats, such as JSO
 
 ### Why do we need an engine? Can't we just handcode it?
 
-While it might seem straightforward, implementing constrained decoding correctly is challenging. Consider a *simple* scenario where we need the model to output in the format `XXXXX*[YYYY]*`. Here, `XXXXX` should not include `*[` and `YYYY` should exclude both `*[` and `]*`. It is tempting to quickly write:
+While it might seem straightforward, implementing constrained decoding correctly is difficult. Consider a *simple* scenario where we need the model to output in the format `XXXXX*[YYYY]*`. Here, `XXXXX` should not include `*[` and `YYYY` should not include both `*[` and `]*`. It is tempting to quickly write:
 
 ```python
 # some logic
@@ -50,11 +50,11 @@ if in_y:
 # some logic
 ```
 
-We can see even handcoding a simple format leads to many nuances. Now, imagine handcoding constrained decoding for full JSON. This example should demonstrate why handcoding constrained decoding in general is *not* a good idea.
+Even handcoding a simple format requires handling many nuances. Now, imagine handcoding constrained decoding for full JSON. This example should demonstrate why handcoding constrained decoding in general is *not* a good idea.
 
 ### Why Not Just Use Out-of-the-Box Solutions Like Guidance, Outline, Jsonformer, etc.?
 
-Out-of-the-box solutions such as Guidance, Outline, Jsonformer, and others, can be incredibly useful and might perfectly meet your needs. However, they might not be the best fit if you:
+Out-of-the-box solutions such as Guidance, Outline, Jsonformer, and others, can be very useful and might perfectly meet your needs. However, they might not be the best fit if you:
 
 - Prefer not to incorporate a Python runtime into your application.
 - Need a faster engine.
@@ -69,16 +69,16 @@ Out-of-the-box solutions such as Guidance, Outline, Jsonformer, and others, can 
 - The engine should implement formats in the most efficient way. In other words, if a user does not use extra expressiveness, then they should not incur unnecessary overhead.
 - Users should have the flexibility to select their preferred options when implementation choices involve compromises.
 
-### Format notation language
+### Choosing a metasyntax notation
 
-Before selecting a format notation language, we should ask ourselves: "[How much expressiveness do we need?](https://en.wikipedia.org/wiki/Chomsky_hierarchy)" Programming languages, the most complex yet practical formats in reality, can provide an insight into the maximum expressiveness needed. [They turn out to be mostly context-free.](https://cs.stackexchange.com/questions/140078/are-modern-programming-languages-context-free) Then, a variant based on [Extended Backus-Naur Form(EBNF)](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form) is a good choice:
+To enable users to specify a format, we need a method to describe that format. A long-established approach is to use a metasyntax notation, a format designed to describe other formats. To select a metasyntax notation, we need to ask ourselves: "[How much expressiveness do we need?](https://en.wikipedia.org/wiki/Chomsky_hierarchy)" Considering our goal to support all commonly used formats, we should examine the most complex yet practical formats—programming languages. [They turn out to be mostly context-free.](https://cs.stackexchange.com/questions/140078/are-modern-programming-languages-context-free) Then, a variant of [Extended Backus-Naur Form(EBNF)](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form) is a good choice:
 
-- It is a wided used(and arguably easy to use) metaformat to define format even before LLM era.
+- It is a wided used(and arguably easy to use) metasyntax notation to define format even before LLM era.
 - It is independent from any specific programming languages.
 - Popular libraries like [Outlines](https://github.com/outlines-dev/outlines?tab=readme-ov-file#using-context-free-grammars-to-guide-generation), [Guidances](https://github.com/guidance-ai/guidance?tab=readme-ov-file#context-free-grammars) and [Llama.cpp](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md) all use some variants of EBNF.
 - It is extensible and hence allows us to define some context-sensitive stuffs for ease of use.
 
-Specifically, besides all the standard features of EBNF, we also want:
+Besides all the standard features of EBNF, we also want:
 
 #### Standard regular expression[^1] support
 
@@ -87,7 +87,7 @@ digits ::= #'[0-9]'; (*A nonterminal that accepts one digit*)
 (*Yes, this weird thing is a comment in ebnf*)
 ```
 
-Adding regular expression improves usability, since they are already commonly used in programming. It also enables potential optimizations since regular expression can be compiled into [determistic finite automata(DFA)](https://en.wikipedia.org/wiki/Deterministic_finite_automaton).
+Adding regular expression improves usability. It also enables potential optimizations since regular expression can be compiled into [determistic finite automata(DFA)](https://en.wikipedia.org/wiki/Deterministic_finite_automaton).
 
 #### Regex-like operators extension [^2]
 
@@ -102,7 +102,65 @@ aaa ::= 'a'*; (*A nonterminal that accepts zero or more 'a'*)
 
 Many EBNF variants already use this extension, enhancing usability.
 
-#### except!([]) special support
+#### any! special nonterminal
+
+```ebnf
+start ::= any!;(*Accept any token*)
+```
+
+This is essentially wildcards, but for tokens rather than characters.
+
+#### except!(\<strings\>,[n]) special nonterminal
+
+```ebnf
+start ::= except!('\n\n')'\n\n';(*Accept a text sequence where the only '\n\n' is at the end*)
+(*'114514\n\n' will be accepted*)
+(*'114514' will not be accepted*)
+(*'114\n\n514\n\n' will not be accepted*)
+```
+
+```ebnf
+start ::= except!('\n\n', 10)'\n\n';(*Accept a text sequence
+ that at most consists of 10 tokens where the only '\n\n' is at the end*)
+(*'114514\n\n' will be accepted*)
+(*'114514' will not be accepted*)
+(*'114\n\n514\n\n' will not be accepted*)
+```
+
+```ebnf
+end ::= '\n\n'; (*The nonterminal in except!, after full expansion,
+ must only contain alternation of strings.*)
+start ::= except!(end)end;(*Accept a text sequence where the only '\n\n' is at the end*)
+(*'114514\n\n' will be accepted*)
+(*'114514' will not be accepted*)
+(*'114\n\n514\n\n' will not be accepted*)
+```
+
+I know it looks ugly, but it's necessary. Without this extension, we still can't easily express the format `XXXXX*[YYYY]*` where `XXXXX` should not include `*[` and `YYYY` should not include both `*[` and `]*`.
+
+**Can't we just augment regular expression with negative lookahead?**
+
+Augmenting regular expressions in this way would not integrate smoothly with the rest of the grammar. This is because nonterminals cannot be embedded within regular expressions, which can lead to unnecessary duplication of strings.
+
+**Can't we just use \#except!(\<strings\>) to represent one token and treat it like a normal nonterminal?**
+
+It won't work. Consider this hypothetical syntax:
+
+```ebnf
+X ::= except!('*[')|except!('*[')X;
+```
+
+- Defining its semantics to exclude all tokens containing `'\n\n'` in the middle does not prevent the model from outputting two consecutive `'\n'` tokens.
+- If its semantics is defined as to reject any token that creates `'\n\n'` in the generated text, then the semantics will be confusing. For instance, theoretically `'\n'X` should allow `\n\n` at the beginning (where the first `'\n'` comes from a terminal and the second from `X`, which only bans `\n\n` and not `\n`); however, this proposed definition would not allow `\n\n` at the beginning.
+- Defining special handling for cases like `X` would essentially recreate the original `except!` syntax but with a more convoluted representation and implementation.
+
+The fundamental issue is that to implement `except!` semantics, the nonterminal must be **stateful** to track the text it has accepted. However, nonterminal recursion in EBNF or context-free languages is not designed to be stateful.
+
+**Can't we just use more natural syntax like except!(\<nonterminal\>)\*?**
+
+This extended semantics is not natural at all in the context of context-free languages. It is context-sensitive. As discussed above, we need an integrated method to handle its repetition, but `except!(<nonterminal>)*` makes it appear as a simple combination of `except!(<nonterminal>)` and `*`. This leads to semantic confusion, as users might struggle with the inconsistency between `except!(<nonterminal>)*` and `(except!(<nonterminal>)'a')*`. An integrated, though less elegant syntax, will clearly indicate that its semantics differ significantly from other parts of the grammar.
+
+### API Design
 
 Todo.
 
