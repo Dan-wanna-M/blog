@@ -52,14 +52,14 @@ if in_y:
 
 Even handcoding a simple format requires handling many nuances. Now, imagine handcoding constrained decoding for full JSON. This example should demonstrate why handcoding constrained decoding in general is *not* a good idea.
 
-### Why Not Just Use Out-of-the-Box Solutions Like Guidance, Outline, Jsonformer, etc.?
+### Why not just use out-of-the-box solutions like Guidance, Outline, Jsonformer, etc.?
 
 Out-of-the-box solutions such as Guidance, Outline, Jsonformer, and others, can be very useful and might perfectly meet your needs. However, they might not be the best fit if you:
 
 - Prefer not to incorporate a Python runtime into your application.
 - Need a faster engine.
 - Require very fine-grained control over the process.
-- Want to revive and apply the arcane knowledge you gained in high-level computer science courses, such as compiler design, from 10 years ago.
+- Would like to write something much more interesting that day-to-day application code.
 
 ## Designing the engine
 
@@ -78,7 +78,7 @@ To enable users to specify a format, we need a method to describe that format. A
 - Popular libraries like [Outlines](https://github.com/outlines-dev/outlines?tab=readme-ov-file#using-context-free-grammars-to-guide-generation), [Guidances](https://github.com/guidance-ai/guidance?tab=readme-ov-file#context-free-grammars) and [Llama.cpp](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md) all use some variants of EBNF.
 - It is extensible and hence allows us to define some context-sensitive stuffs for ease of use.
 
-Besides all the standard features of EBNF, we also want:
+Besides all the standard features of EBNF(except exceptions[^3]), we also want:
 
 #### Standard regular expression[^1] support
 
@@ -98,6 +98,10 @@ digits ::= digits+; (*A nonterminal that accepts one or more digit*)
 
 ```ebnf
 aaa ::= 'a'*; (*A nonterminal that accepts zero or more 'a'*)
+```
+
+```ebnf
+aaa ::= 'a'?; (*A nonterminal that accepts zero or one 'a'*)
 ```
 
 Many EBNF variants already use this extension, enhancing usability.
@@ -140,7 +144,9 @@ I know it looks ugly, but it's necessary. Without this extension, we still can't
 
 **Can't we just augment regular expression with negative lookahead?**
 
-Augmenting regular expressions in this way would not integrate smoothly with the rest of the grammar. This is because nonterminals cannot be embedded within regular expressions, which can lead to unnecessary duplication of strings.
+Most regular expression engines either do not support lookahead at all or support the arbitrary version. Modifying these engines to extend or limit their capabilities would introduce significant complexities.
+
+Furthermore, augmenting regular expressions in this way would require a way to embed nonterminals within the regular expressions, leading to added complexity. Such changes could also break compatibility with standard regular expression syntax.
 
 **Can't we just use \#except!(\<strings\>) to represent one token and treat it like a normal nonterminal?**
 
@@ -154,15 +160,15 @@ X ::= except!('*[')|except!('*[')X;
 - If its semantics is defined as to reject any token that creates `'\n\n'` in the generated text, then the semantics will be confusing. For instance, theoretically `'\n'X` should allow `\n\n` at the beginning (where the first `'\n'` comes from a terminal and the second from `X`, which only bans `\n\n` and not `\n`); however, this proposed definition would not allow `\n\n` at the beginning.
 - Defining special handling for cases like `X` would essentially recreate the original `except!` syntax but with a more convoluted representation and implementation.
 
-The fundamental issue is that to implement `except!` semantics, the nonterminal must be **stateful** to track the text it has accepted. However, nonterminal recursion in EBNF or context-free languages is not designed to be stateful.
+The fundamental issue is that to implement `except!` semantics, the nonterminal must be **stateful** to track the text it has accepted. However, nonterminal recursion in EBNF or context-free languages is **not** designed to be stateful.
 
 **Can't we just use more natural syntax like except!(\<strings\>)\*?**
 
-This extended semantics is not natural at all in the context of context-free languages. It is context-sensitive. As discussed above, we need an integrated method to handle its repetition, but `except!(<strings>)*` makes it appear as a simple combination of `except!(<strings>)` and `*`. In other words, a nonterminal repeated 0 or more times. This is **not** the correct interpretation. An integrated, though less elegant syntax, will clearly indicate that its semantics differ significantly from other parts of the grammar.
+This extended semantics is not natural at all in the context of context-free languages. It is context-sensitive. As discussed above, we need an integrated method to handle its repetition, but `except!(<strings>)*` makes it appear as a simple combination of `except!(<strings>)` and `*`. In other words, a nonterminal repeated 0 or more times. As the discussion above indicates, this is **not** the correct interpretation. An integrated, though less elegant syntax, will clearly indicate that its semantics differ significantly from other parts of the grammar.
 
 ### Core API Design
 
-Fortunately, considering the use cases, our theoratical API can be very simple:
+Fortunately, considering the use cases, our theoretical API can be very simple:
 
 1. `engine.initialize()`: Initializes the engine with grammar, vocabulary, configuration, etc.
 2. `engine.modify_possible_logits()`: A high-level method that takes a new token and a mutable logits slice to:
@@ -179,10 +185,10 @@ Fortunately, considering the use cases, our theoratical API can be very simple:
 7. `engine.clone()`: Clones the engine’s internal states but does not clone vocabulary and grammar.
     - Assuming vocabulary and grammar are immutable once loaded, sharing their immutable references can prevent unnecessary allocations.
 
-
 ## Conclusion
 
-
+Designing a practical engine for constrained decoding is an exciting experience, revealing how many intricacies are involved in creating a library that, at first glance, appears straightforward. Most challenges stem from the our requirement that the engine must be *practical* for real-world applications. In the future, I plan to implement this design and will write a similar post on its implementation.
 
 [^1]: Regular expression in this post refers to the regular expression as it is defined in wikipedia. Many programming languages have extended regular expression to include features such as arbitrary lookarounds and recursion, which essentially turns it into context-free or context-sensitive languages and is almost impossible to implement efficiently.
 [^2]: Optional operators are already supported in the EBNF standard.
+[^3]: The standard exception symbol, per ISO standard, is a weird thing and has too much limitations to be useful.
