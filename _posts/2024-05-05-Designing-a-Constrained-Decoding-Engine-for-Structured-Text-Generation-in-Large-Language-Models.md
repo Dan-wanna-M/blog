@@ -156,13 +156,33 @@ X ::= except!('*[')|except!('*[')X;
 
 The fundamental issue is that to implement `except!` semantics, the nonterminal must be **stateful** to track the text it has accepted. However, nonterminal recursion in EBNF or context-free languages is not designed to be stateful.
 
-**Can't we just use more natural syntax like except!(\<nonterminal\>)\*?**
+**Can't we just use more natural syntax like except!(\<strings\>)\*?**
 
-This extended semantics is not natural at all in the context of context-free languages. It is context-sensitive. As discussed above, we need an integrated method to handle its repetition, but `except!(<nonterminal>)*` makes it appear as a simple combination of `except!(<nonterminal>)` and `*`. This leads to semantic confusion, as users might struggle with the inconsistency between `except!(<nonterminal>)*` and `(except!(<nonterminal>)'a')*`. An integrated, though less elegant syntax, will clearly indicate that its semantics differ significantly from other parts of the grammar.
+This extended semantics is not natural at all in the context of context-free languages. It is context-sensitive. As discussed above, we need an integrated method to handle its repetition, but `except!(<strings>)*` makes it appear as a simple combination of `except!(<strings>)` and `*`. In other words, a nonterminal repeated 0 or more times. This is **not** the correct interpretation. An integrated, though less elegant syntax, will clearly indicate that its semantics differ significantly from other parts of the grammar.
 
-### API Design
+### Core API Design
 
-Todo.
+Fortunately, considering the use cases, our theoratical API can be very simple:
+
+1. `engine.initialize()`: Initializes the engine with grammar, vocabulary, configuration, etc.
+2. `engine.modify_possible_logits()`: A high-level method that takes a new token and a mutable logits slice to:
+    - Modify the input logits and return a flag indicating some next tokens can be accepted.
+    - Leave the input logits unchanged and return a flag indicating the grammar is exhausted, and no further inputs are allowed. Exhaustion is defined as the scenario where previous tokens plus the new token form a string fully recognized according to the grammar.
+    - Leave the input logits unchanged and return a flag indicating the input token is invalid according to the grammar.
+3. `engine.advance()`: A low-level method that takes a new token, updates internal states, and returns flags to indicate:
+    - New inputs can be accepted.
+    - The grammar is exhausted.
+    - The input token is invalid according to the grammar.
+4. `engine.current_possible_tokens()`: Returns current possible tokens based on the engine's state.
+5. `update_logits_from_tokens()`: Modifies logits based on the current possible tokens. This method supports scenarios where the engine's states need updating during prefill stages.
+6. `engine.reset()`: Resets the engine's internal states to their initial conditions.
+7. `engine.clone()`: Clones the engine’s internal states but does not clone vocabulary and grammar.
+    - Assuming vocabulary and grammar are immutable once loaded, sharing their immutable references can prevent unnecessary allocations.
+
+
+## Conclusion
+
+
 
 [^1]: Regular expression in this post refers to the regular expression as it is defined in wikipedia. Many programming languages have extended regular expression to include features such as arbitrary lookarounds and recursion, which essentially turns it into context-free or context-sensitive languages and is almost impossible to implement efficiently.
 [^2]: Optional operators are already supported in the EBNF standard.
