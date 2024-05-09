@@ -5,3 +5,4 @@ title: Huanghe's blog
 url: "https://Dan-Wanna-M.github.io"
 baseurl: "/blog"
 highlighter: rouge
+layout: default
