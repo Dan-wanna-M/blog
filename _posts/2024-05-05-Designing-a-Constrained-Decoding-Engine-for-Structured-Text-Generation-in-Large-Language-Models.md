@@ -2,6 +2,9 @@
 title: "Designing a Constrained Decoding Engine for Structured Text Generation in Large Language Models"
 date: 2024-05-05
 ---
+
+# Designing a Constrained Decoding Engine for Structured Text Generation in Large Language Models
+
 ## Motivation
 
 Structured text generation means to create text in specific formats, such as JSON, markdown, HTML, or code. Typically, prompting a model to produce text in these formats works well *most of the time*. But what if you need it to work perfectly *every time*? That’s where constrained decoding comes into play. It prevents the generation of unwanted tokens by adjusting the model's output probabilities. Combined with prompt engineering, constrained decoding ensures the output strictly follows the desired format. Moreover, if constrained decoding limits the possible outputs to a single token, there's no need to call the model again, which can [significantly speed up the generation process](https://blog.dottxt.co/coalescence.html#orga014f18).
