@@ -117,7 +117,8 @@ This is essentially wildcards, but for tokens rather than characters.
 #### except!(\<strings\>,[n]) special nonterminal
 
 ```ebnf
-start ::= except!('\n\n')'\n\n';(*Accept a text sequence where the only '\n\n' is at the end*)
+start ::= except!('\n\n')'\n\n';(*Accept a text sequence
+ where the only '\n\n' is at the end*)
 (*'114514\n\n' will be accepted*)
 (*'114514' will not be accepted*)
 (*'114\n\n514\n\n' will not be accepted*)
@@ -125,16 +126,19 @@ start ::= except!('\n\n')'\n\n';(*Accept a text sequence where the only '\n\n' i
 
 ```ebnf
 start ::= except!('\n\n', 10)'\n\n';(*Accept a text sequence
- that at most consists of 10 tokens where the only '\n\n' is at the end*)
+ that at most consists of 10 tokens
+  where the only '\n\n' is at the end*)
 (*'114514\n\n' will be accepted*)
 (*'114514' will not be accepted*)
 (*'114\n\n514\n\n' will not be accepted*)
 ```
 
 ```ebnf
-end ::= '\n\n'; (*The nonterminal in except!, after full expansion,
+end ::= '\n\n'; (*The nonterminal in except!,
+ after full expansion,
  must only contain alternation of strings.*)
-start ::= except!(end)end;(*Accept a text sequence where the only '\n\n' is at the end*)
+start ::= except!(end)end;(*Accept a text sequence
+ where the only '\n\n' is at the end*)
 (*'114514\n\n' will be accepted*)
 (*'114514' will not be accepted*)
 (*'114\n\n514\n\n' will not be accepted*)
@@ -156,8 +160,8 @@ It won't work. Consider this hypothetical syntax:
 X ::= except!('*[')|except!('*[')X;
 ```
 
-- Defining its semantics to exclude all tokens containing `'\n\n'` in the middle does not prevent the model from outputting two consecutive `'\n'` tokens.
-- If its semantics is defined as to reject any token that creates `'\n\n'` in the generated text, then the semantics will be confusing. For instance, theoretically `'\n'X` should allow `\n\n` at the beginning (where the first `'\n'` comes from a terminal and the second from `X`, which only bans `\n\n` and not `\n`); however, this proposed definition would not allow `\n\n` at the beginning.
+- Defining its semantics to exclude all tokens containing `'*['` in the middle does not prevent the model from outputting `'*'` and `[` tokens separately.
+- If its semantics is defined as to reject any token that creates `'*['` in the generated text, then the semantics will be confusing. For instance, theoretically `'*'X` should allow `*[` at the beginning (where the first `'*'` comes from the terminal and the second from `X`, which only bans `*[` and not `[`); however, this proposed definition would reject `*[` at the beginning.
 - Defining special handling for cases like `X` would essentially recreate the original `except!` syntax but with a more convoluted representation and implementation.
 
 The fundamental issue is that to implement `except!` semantics, the nonterminal must be **stateful** to track the text it has accepted. However, nonterminal recursion in EBNF or context-free languages is **not** designed to be stateful.
@@ -180,7 +184,7 @@ Fortunately, considering the use cases, our theoretical API can be very simple:
     - The grammar is exhausted.
     - The input token is invalid according to the grammar.
 4. `engine.current_possible_tokens()`: Returns current possible tokens based on the engine's state.
-5. `update_logits_from_tokens()`: Modifies logits based on the current possible tokens. This method supports scenarios where the engine's states need updating during prefill stages.
+5. `update_logits_from_tokens()`: Modifies logits based on the current possible tokens. These three low-level methods support scenarios where the engine's states need updating during prefill stages.
 6. `engine.reset()`: Resets the engine's internal states to their initial conditions.
 7. `engine.clone()`: Clones the engine’s internal states but does not clone vocabulary and grammar.
     - Assuming vocabulary and grammar are immutable once loaded, sharing their immutable references can prevent unnecessary allocations.
