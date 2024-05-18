@@ -173,6 +173,8 @@ The fundamental issue is that to implement `except!` semantics, the nonterminal 
 
 This extended semantics is not natural at all in the context of context-free languages. It is context-sensitive. As discussed above, we need an integrated method to handle its repetition, but `except!(<strings>)*` makes it appear as a simple combination of `except!(<strings>)` and `*`. In other words, a nonterminal repeated 0 or more times. As the discussion above indicates, this is **not** the correct interpretation. An integrated, though less elegant syntax, will clearly indicate that its semantics differ significantly from other parts of the grammar.
 
+**Update 2024/05/15**: I decide to name my EBNF variant as KBNF(Koishi's BNF). Long live Touhou Project!
+
 ### Core API Design
 
 Fortunately, considering the use cases, our theoretical API can be very simple:

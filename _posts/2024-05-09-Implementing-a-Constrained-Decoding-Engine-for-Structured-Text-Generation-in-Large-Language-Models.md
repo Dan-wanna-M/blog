@@ -27,30 +27,44 @@ If the requirements for efficiency and ease of embedding were lifted, virtually 
 
 ### `engine.initialize()`
 
-Implementing this method requires us to initialize the grammar, tokenizer's vocabulary and configuration first. While initializing the vocabulary and configuration is straightforward, initializing the grammar involves constructing certain data structures from the EBNF text to facilitate a more efficient implementation later on. Specifically, we want to create an [abstract syntax tree(AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of the EBNF and then simplify the AST into what I term Loup's normal form (LNF)[^2].
+Implementing this method requires us to initialize the grammar, tokenizer's vocabulary and configuration first. While initializing the vocabulary and configuration is straightforward, initializing the grammar involves constructing certain data structures from the EBNF text to facilitate a more efficient implementation later on. Specifically, we want to create an [abstract syntax tree(AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of the EBNF, validate the AST, and then simplify the AST into what I term Loup's normal form (LNF)[^2].
 
 #### Construct EBNF AST
 
-Fortunately, in Rust we have [ebnf](https://github.com/ChAoSUnItY/ebnf) library that handles most of work for us. We only need to make minor modifications[^1] to include `any!` and `except!` special nonterminals and support comments.
+Fortunately, in Rust we have [ebnf](https://github.com/ChAoSUnItY/ebnf) library that handles most of work for us. We only need to make minor modifications[^1] to:
+
+1. Support `any!` and `except!` special nonterminals
+2. Support comments
+3. Check regular expressions' syntactic correctness
+4. Intern strings for regular expressions, nonterminals and terminals.
+
+#### Validate the AST
+
+It is possible for an EBNF snippet to be syntactically correct yet semantically incorrect. For example: `A::=B;`, where `B` is undefined. Hence, we will validate the AST against:
+
+1. Undefined nonterminals
+2. Invalid excepted nonterminals
+    - All excepted nonterminals must directly contain terminals combined with concatneations and alternations[^6].
 
 #### Obtain LNF
 
-This step is trickier. To make efficient implementation easier, we would like to do the following, sequentially:
+This step is trickier. To make efficient implementation easier, we would like to do the following:
 
-1. **Remove unused rules**
+- **Remove useless rules**
 
-    Unused rules are a subset of [useless productions](https://www.geeksforgeeks.org/simplifying-context-free-grammars/) in the sense that we allow productions that never terminate because they are not strictly "useless" in our context. For example:
+    Useless rules are rules that never contribute to text recognition. For example:
 
     ```ebnf
     S ::= 'ab'S | 'ab'A | 'ab'B;
+    S ::= S;
     A ::= 'c'd;
     B ::= 'a'B;
     C ::= 'dc';
     ```
 
-    In this grammar, assuming `S` is our starting nonterminal, the rule `C ::= 'dc'`; is unused and will be removed. However, `B ::= 'a'B;`, a production that never terminates, will be retained. Allowing productions that never terminate enables expressing constraints on infinite sequences, thus enhancing expressiveness[^3].
+    Assuming `S` is the starting nonterminal, the rule `C ::= 'dc';` is unused and will be removed as it contributes nothing to the derivations starting from `S`. Similarly, the rule `S ::= S;` is considered useless because it recursively refers to itself indefinitely without leading to a terminal state. On the other hand, the rule `B ::= 'a'B;` will be retained. Although this production never terminates, it allows for the expression of constraints on infinite sequences, thus enhancing the grammar’s expressiveness.[^3].
 
-2. **Flatten nested rules with nonterminals**
+- **Flatten nested rules with nonterminals**
 
     Nested rules refer to rules containing groups, options and/or repetitions. We can view groups, options and/or repetitions are "anonymous nonterminals." For example,
 
@@ -68,7 +82,7 @@ This step is trickier. To make efficient implementation easier, we would like to
 
     To unify representation, we will replace all "anonymous nonterminals" with explicitly named nonterminals.
 
-3. **Flatten operators with precedence**
+- **Flatten operators with precedence**
 
     The AST of `filter ::= 'a' , 'b' , 'c' | 'd';` looks like this:
 
@@ -104,22 +118,250 @@ This step is trickier. To make efficient implementation easier, we would like to
                 - Terminal: c
     ```
 
-4. **Group rules with same left-hand side together**
+- **Group rules with same left-hand side together**
 
-    Well, most people already group rules with same left-hand side together. But maybe some translation layers(that convert Python class to EBNF schema) become lazy in certain cases. Anyway, we will turn `A::='a';A::='b;` into `A::='a'|'b';`.
+    Well, most people already group rules with same left-hand side together. But maybe some translation layers(that convert Python class to EBNF schema) become lazy in certain cases. Anyway, we will turn `A::='a'; A::='b;` into `A::='a'|'b';` to ensure consistency.
 
-5. **Remove unit rules**
+- **Merge consecutive terminals**
 
-    We will also flatten unnecessary nested nonterminals, like from `A::=B+;B::=C?;` to `A::=B*;`.
+    Obviously `A::='b''c''d';` can be simplified to `A::='bcd';`.
 
-6. **Merge consecutive terminals**
+- **Deduplicate alternations**
 
-7. **Eliminate null rules**
+    Obviously `A::='a'|'a';` can be simplified to `A::='a';`. Ensuring alternations of the same nonterminal are unique are helpful in later optimizations.
 
-    a
+- **Remove unit rules**
+    Rules like `A::=B; B::=C;` can be simplified to `A::=C;`. EBNF-unique recursion semantics should be perserved in this process: expressions like `A ::= B+; B ::= C?;` become `A ::= B*;`.
 
+- **Expand repetitions and options**
 
-[^1]: Well, sort of. You can definitely argue that we also need syntax highlight and user-friendly errors for our EBNF variant to enhance usability, and I think you are right. The problem is that the library does not have these features, and implementing these features are time-consuming, and hence I will omit them. At least for *now*.
+    Note that:
+    - `A::=B?;` is equivalent to `A::=""|B;`.
+    - `A::=B*;` is equivalent to `A::=""|B|AB;`[^5].
+    - `A::=B+;` is equivalent to `A::=B|AB;`.
+
+    This simplification, along with flattening nested rules with nonterminals, remove EBNF-unique recursion semantics, allowing cleaner implementation.
+
+- **Merge nonterminals with same productions**
+
+    ```ebnf
+    A ::= B|C;
+    B ::= 'a';
+    C ::= 'a';
+    ```
+
+    can be simplified to:
+
+    ```ebnf
+    A ::= B|B;
+    B ::= 'a';
+    ```
+
+- **Eliminate nullable rules**
+
+    Consider this grammar:
+
+    ```ebnf
+    A::=B? B? B? B? B?;
+    B ::= 'b';
+    ```
+
+    And this string: `'bbbbb'`.
+    If we do not remove nullable rules(nonterminals that accept empty string), then at the first `'b'`, we need to check:
+    - whether `B? B? B? B? B?` accepts the character, since it is the direct derivation of `A`.
+    - whether `B? B? B? B?` accepts the character, since `B?` is nullable, allowing us to skip it.
+    - whether `B? B? B?` accepts the character, since `B? B?` is nullable, allowing us to skip it.
+    - whether `B? B?` accepts the character, since `B? B? B?` is nullable, allowing us to skip it.
+    - whether `B?` accepts the character, since `B? B? B? B?` is nullable, allowing us to skip it.
+
+    When advancing to the next `'b'`, we must update our position in all five variations and repeat the above checks for each variation. A naive implementation may lead to exponential time complexity. While a more advanced approach might deduplicate the rules to reduce runtime costs, the most efficient strategy is to rewrite the grammar to avoid nullable rules entirely, so we will not have any runtime costs.
+
+    **The Grammar Rewriting Procedure**
+
+    1. Identify All Nullable Symbols: Nullable symbols are those that can:
+
+        - Directly derive to an empty string (`A ::= '';`).
+        - Be derived from concatenations of other nullable symbols (`A ::= B? B?;`).
+    2. Modify Productions Involving Nullable Symbols: For each nullable symbol within a production, create two additional productions: one with the symbol and one without it. If removing the symbol results in an empty production, do not add it[^8].
+        - For example, `A ::= B?;` is expanded to `A ::= B;`.
+        - This procedure is similar to generating all possible combinations of nullable symbols in the production.
+
+The code implementing all the procedures described above is available in [my forked ebnf repository](https://github.com/Dan-wanna-M/ebnf)[^9].
+
+### `engine.modify_possible_logits()`
+
+Unlike the AST transformations, which only require basic programming skills and straightforward tree traversal and construction algorithms[^7], implementing this function needs advanced algorithms and more aggressive optimizations.
+
+#### Choosing an algorithm
+
+Let's revisit our problem. After our engine is initialized with LNF, we need to
+
+1. Determine if the current engine state can accept the input token.
+2. Update the state if possible.
+3. Identify all possible tokens that can be accepted by the updated state.
+4. Update the logits accordingly.
+
+The first three steps are similar to the operations of a [parser](https://en.wikipedia.org/wiki/Parsing) in streaming mode. Since our grammar is a proper superset of context free grammars, we should examine algorithms capable of parsing **[any context free language](https://en.wikipedia.org/wiki/Context-free_language).** This excludes [LL(k) parsers](https://en.wikipedia.org/wiki/LL_parser) and [LR(k) parsers](https://en.wikipedia.org/wiki/LR_parser)(such as [yacc](https://en.wikipedia.org/wiki/Yacc#:~:text=Yacc%20(Yet%20Another%20Compiler%2DCompiler,Johnson.))) which only handle a subset of context-free languages. The remaining parsers are [Earley](https://en.wikipedia.org/wiki/Earley_parser), [GLR](https://en.wikipedia.org/wiki/GLR_parser), [GLL](https://softwareengineering.stackexchange.com/questions/425562/how-does-the-gll-parsing-algorithm-work) and [parsing with derivatives](https://pdarragh.github.io/blog/2017/05/22/parsing-with-derivatives/). I prefer a modified Earley algorithm because:
+
+- The way Earley works allows us to work on a contiguous buffer, while GLR, GLL and parsing with derivatives all need some graph-like or tree-like structures that lead to more pointer chasing and cache misses.
+- Properly optimized, an Earley parser can match the linear time performance of LL(k)/LR(k) parsers on LL(k)/LR(k) grammar and can also parse many languages in linear time that LL(k)/LR(k) parsers cannot.
+- The Earley algorithm can be easily adapted to incorporate our `except!` special nonterminal semantics without compromising its original time complexity.
+
+#### Modifications to the original Earley algorithm
+
+If you are unfamiliar with how the original Earley algorithm operates, I highly recommend reading [Vaillant Loup's blog](https://loup-vaillant.fr/tutorials/earley-parsing/) which remains one of the best resources on Earley parsing even after ten years.
+
+- **Operate on byte level rather than token level**
+
+    Traditional parsers operate on token sequences generated by a [lexer](https://en.wikipedia.org/wiki/Lexical_analysis). However, in our context, using a separate lexer is impractical as each LLM call generates only one logits and one sampled token. Requiring all terminals in KBNF to be composed from LLM tokens would make creating KBNF schema extremely tedious, rendering it infeasible. Therefore, we will encode all LLM token strings and KBNF terminals in UTF-8, enabling our engine to operate at the byte level.
+
+- **Discard completed Earley items**
+
+    The Earley parsing algorithm typically retains all completed items to construct a parsing forest. However, since our goal is only to recognize strings, we can discard completed Earley items (i.e., those for which completions have been executed) in an Earley set. This optimization allows us to compress the set of to-be-completed Earley items into a set of tuples `(<nonterminal>, <start_column>)`, e.g., compressing `(A -> a., 1)` into `(A, 1)`.
+
+- **Deploy Leo's optimization(Kegler's variant)**
+
+    [Leo's optimization](https://www.sciencedirect.com/science/article/pii/030439759190180A), a modification on the original Earley algorithm, enables parsing all LR(k) grammars in linear time. Despite its effectiveness, it is often not explained in detail in plain terms. I will restate Leo's optimization here. Consider this grammar with the string `'aaaaa'`:
+
+    ```ebnf
+    A::='a'A|'a';
+    ```
+
+    The corresponding Earley sets:
+
+    ```txt
+    ======0======
+    (A ->.a A, 0)
+    (A ->.a, 0)
+    ======1======
+    (A -> a.A, 0)
+    (A -> a., 0)
+    (A ->.a A, 1)
+    (A ->.a, 1)
+    ======2======
+    (A -> a.A, 1)
+    (A -> a., 1)
+    (A ->.a A, 2)
+    (A ->.a, 2)
+    (A -> a A., 0)
+    ======3======
+    (A -> a.A, 2)
+    (A -> a., 2)
+    (A ->.a A, 3)
+    (A ->.a, 3)
+    (A -> a A., 1)
+    (A -> a A., 0)
+    ======4======
+    (A -> a.A, 3)
+    (A -> a., 3)
+    (A ->.a A, 4)
+    (A ->.a, 4)
+    (A -> a A., 2)
+    (A -> a A., 1)
+    (A -> a A., 0)
+    ======5======
+    (A -> a.A, 4)
+    (A -> a., 4)
+    (A ->.a A, 5)
+    (A ->.a, 5)
+    (A -> a A., 3)
+    (A -> a A., 2)
+    (A -> a A., 1)
+    (A -> a A., 0)
+    ```
+
+    Note that the repeated processing of `(A -> a A., x)` leads to quadratic time complexity. Also, note that the completed Earley items' chain
+
+    `(A -> a., 4)=>(A -> a A., 3)=>(A -> a A., 2)=>(A -> a A., 1)=>(A -> a A., 0)`
+
+    where the first completed item triggers the the second completed item, which triggers the third, and so on, is the **only** way `(A -> a.A, 0)` in set `0` becomes `(A -> aA., 0)` in set `4`. Similarly, this chain is **also** the **only** way `(A -> a.A, 0)` in set `0` becomes `(A -> aA., 0)` in set `3`, in set `2`, and so on. This motivates us to cache `(A -> aA., 0)` and `A` in some ways, since we know the completion of `A` will always lead to `(A -> aA., 0)` eventually. This can be more formally stated with the pseudocode:
+
+  - **Leo optimization(Lazily evaluated)**
+
+    ```python
+    def find_leo_item(earley_set, nonterminal):
+        filtered = list(filter(earley_set,
+                    lambda item: item.current_symbol == nonterminal))
+        if len(filtered) == 1: # there exists exact one parent
+            temp = filtered[0].advance_dot() # create a new item
+            if temp.dot_index == len(item.rule):
+                # reaches the end of the rule after advancing
+                return temp # This is the leo item
+        return None
+
+    def find_topmost_leo_item(earley_set, nonterminal,last_leo_item):
+        if nonterminal in earley_set.leo_items:
+            return earley_set.leo_items[nonterminal]
+            # one nonterminal will only correspond to one chain in a set
+            # otherwise it is no longer a chain.
+        leo_item = find_leo_item(earley_set, nonterminal, last_leo_item)
+        if leo_item is not None:
+            leo_item = find_topmost_leo_item(
+                leo_item.initial_earley_set,
+                 leo_item.nonterminal, leo_item)
+            earley_set.leo_items[leo_item.nonterminal] = leo_item
+        return last_leo_item
+
+    def leo_complete(earley_item, earley_set):
+        leo_item = find_topmost_leo_item(earley_item.initial_earley_set,
+         earley_item.nonterminal, None)
+        if leo_item is not None:
+            earley_set.leo_items[earley_item.nonterminal] = leo_item
+            return True
+        return False
+
+    def complete(earley_item, earley_set):
+        if not leo_complete(earley_item, earley_set):
+            earley_complete(earley_item, earley_set)
+    ```
+
+  Finding the topmost Leo item is not too complex. It is essentially the chain of Earley items where all the intermediate items are thrown away. The definition of Leo item constraint, **however**, is **subtle**. If we use this constraint instead:
+
+  ```python
+  def find_leo_item(earley_set, nonterminal):
+        filtered = list(filter(earley_set,
+                    lambda item: item.advance_dot().dot_index == len(item.rule)))
+        # find all rules one step away from completition first
+        if len(filtered) == 1: # there exists exact one
+            if filtered[0].current_symbol == nonterminal:
+                # check the postdot symbol
+                return temp # This will NOT work!
+        return None
+  ```
+
+  **Then the code will NOT work!** [This post](https://cs.stackexchange.com/questions/101770/leos-deterministic-reduction-for-earley-parsing) shows why this constraint does not work.
+  
+  **Kegler variant**
+  [The Kegler variant](https://github.com/jeffreykegler/old_kollos/blob/master/notes/misc/leo2.md) is essentially the eagerly evaluated version of Leo's optimization. Specifically, we compute possible Leo items for each fully processed Earley set. To reduce the number of useless items, we also only add Leo items for items that can lead to right recursion.
+
+  We prefer the Kegler variant because it ensures we only write to the current Earley set and the immediate next Earley set, allowing the next optimization.
+
+- **Use contiguous buffer for Earley sets, LNF and Leo items**
+
+  A naive implementation of Earley sets would look like a 2D nested vectors: `Vec<Vec<T>>`. This is not very efficient for iterating all the elements however: there is no guarantee that the inner vectors' buffers are all allocated on one contiguous memory block and hence cache miss may happen when we move to the next vector during iteration. A more efficient data structure would be a "jagged vector", which is like a [jagged array](https://en.wikipedia.org/wiki/Jagged_array#:~:text=In%20computer%20science%2C%20a%20jagged,edges%20when%20visualized%20as%20output.) but allows appending data at the last row and creates new rows. Its semantics allow us to use a 1D contiguous buffer as its backup storage and a separate dense indices array for locating rows in the buffer.
+  
+  With multiple hierarchical indices arrays, it can be used when we flatten our LNF grammar into a Earley-friendly data structure where `struct[nonterminalID][dot_position][rule_ID]` refers to one dotted symbol in an Earley item. This ensures we always access contiguous memory when we add items from predictions and when locating dotted symbols(given they come from the same prediction).
+
+  For Leo items, 
+
+- **Support regular expressions**
+
+- **Support any! and except!**
+
+- **Use trie for large sets of terminals**
+
+- **Compress Earley items and LNF nodes**
+
+- **Filter tokens by possible first bytes**
+
+- **Cache possible tokens**
+
+[^1]: Well, sort of. You can definitely argue that we also need user-friendly errors for our EBNF variant to enhance usability, and I think you are right. The problem is that the library does not have these features, and implementing these features are time-consuming, and hence I will omit them. At least for *now*.
 [^2]: The rationale behind this naming is because I only see this form in [Loup's blog](https://loup-vaillant.fr/tutorials/earley-parsing/recogniser). This is definitely not an academic term but to the best of my knowledge, I do not know if there exists a formal name.
 [^3]: Is this particularly useful? Maybe not. Does this affect implementation's efficiency? Definitely not. So if EBNF by definition allows it, why don't we allow it?
-[^4]: That's why I write all the steps before with a while loop and a stack on the heap.
+[^4]: That's why I code all the steps before with a while loop and a stack on the heap.
+[^5]: This is the left recursion version. You may want the right recursion version. I prefer left recursion because I will use Earley Algorithm later.
+[^6]: It is technically possible to support more complex nonterminals that only contain terminals *after substituting all nonterminals and grouping*. However, this feature is harder to implement so I will leave it for *now*.
+[^7]: Well, not that *simple* if you, like me, do not want to use recursion and hate reference counting and unnecessary cloning.
+[^8]: Note that accepting an empty string at the beginning is useless in our context.
+[^9]: Maybe in the future I will publish it as a Rust crate.
