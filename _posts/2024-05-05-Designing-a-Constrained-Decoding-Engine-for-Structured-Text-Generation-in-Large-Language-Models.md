@@ -109,13 +109,7 @@ aaa ::= 'a'?; (*A nonterminal that accepts zero or one 'a'*)
 
 Many EBNF variants already use this extension, enhancing usability.
 
-#### any! special nonterminal
-
-```ebnf
-start ::= any!;(*Accept any token*)
-```
-
-This is essentially wildcards, but for tokens rather than characters.
+*2024/05/21 update: Removed `any!` special nonterminal. After further investigation I found its semantics difficult to define clearly. Regex should be enough.*
 
 #### except!(\<strings\>,[n]) special nonterminal
 
@@ -129,7 +123,7 @@ start ::= except!('\n\n')'\n\n';(*Accept a text sequence
 
 ```ebnf
 start ::= except!('\n\n', 10)'\n\n';(*Accept a text sequence
- that at most consists of 10 tokens
+ that at most consists of 10 bytes
   where the only '\n\n' is at the end*)
 (*'114514\n\n' will be accepted*)
 (*'114514' will not be accepted*)
@@ -173,7 +167,7 @@ The fundamental issue is that to implement `except!` semantics, the nonterminal 
 
 This extended semantics is not natural at all in the context of context-free languages. It is context-sensitive. As discussed above, we need an integrated method to handle its repetition, but `except!(<strings>)*` makes it appear as a simple combination of `except!(<strings>)` and `*`. In other words, a nonterminal repeated 0 or more times. As the discussion above indicates, this is **not** the correct interpretation. An integrated, though less elegant syntax, will clearly indicate that its semantics differ significantly from other parts of the grammar.
 
-**Update 2024/05/15**: I decide to name my EBNF variant as KBNF(Koishi's BNF). Long live Touhou Project!
+*Update 2024/05/15: I decide to name my EBNF variant as KBNF(Koishi's BNF). Long live Touhou Project!*
 
 ### Core API Design
 
