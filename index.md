@@ -2,7 +2,7 @@
 layout: default
 ---
 
-# My Blog Posts
+# Huanghe's blogs
 
 {% for post in site.posts %}
   {% if post.completed %}
