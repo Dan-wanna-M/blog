@@ -1,8 +1,9 @@
 ---
+title: Huanghe's blog
 layout: default
 ---
 
-# Huanghe's blogs
+## Blog
 
 {% for post in site.posts %}
   {% if post.completed %}
