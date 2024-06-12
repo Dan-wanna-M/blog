@@ -92,7 +92,7 @@ digits ::= #'[0-9]'; (*A nonterminal that accepts one digit*)
 
 Adding regular expression improves usability. It also enables potential optimizations since regular expression can be compiled into [determistic finite automata(DFA)](https://en.wikipedia.org/wiki/Deterministic_finite_automaton).
 
-#### Make concatenation symbol optional
+**Optional concatenation symbol**
 
 ```ebnf
 a = 'a',a; (*pedantic EBNF*)
@@ -102,7 +102,7 @@ a = 'a' a; (*This is fine as well*)
 
 The concatenation symbol `,` is traditionally used to separate elements but often merely adds syntactic noise. Allowing its omission simplifies the grammar visually.
 
-#### Regex-like operators extension
+**Regex-like operators extension**
 
 ```ebnf
 digits ::= #'[0-9]';
@@ -121,7 +121,7 @@ Many EBNF variants already use this extension, enhancing usability.
 
 *2024/05/21 update: Removed `any!` special nonterminal. After further investigation I found its semantics difficult to define clearly. Regex should be enough.*
 
-#### except!(\<strings\>,[n]) special nonterminal
+**except!(\<strings\>,[n]) special nonterminal**
 
 ```ebnf
 start ::= except!('\n\n')'\n\n';(*Accept a text sequence
