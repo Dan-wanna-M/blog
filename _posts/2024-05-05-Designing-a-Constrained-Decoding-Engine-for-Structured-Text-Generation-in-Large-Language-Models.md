@@ -93,7 +93,17 @@ digits ::= #'[0-9]'; (*A nonterminal that accepts one digit*)
 
 Adding regular expression improves usability. It also enables potential optimizations since regular expression can be compiled into [determistic finite automata(DFA)](https://en.wikipedia.org/wiki/Deterministic_finite_automaton).
 
-#### Regex-like operators extension [^2]
+#### Make concatenation symbol optional
+
+```ebnf
+a = 'a',a; (*pedantic EBNF*)
+a = 'a'a; (*This is fine*)
+a = 'a' a; (*This is fine as well*)
+```
+
+The concatenation symbol `,` is traditionally used to separate elements but often merely adds syntactic noise. Allowing its omission simplifies the grammar visually.
+
+#### Regex-like operators extension
 
 ```ebnf
 digits ::= #'[0-9]';
@@ -150,7 +160,7 @@ Most regular expression engines either do not support lookahead at all or suppor
 
 Furthermore, augmenting regular expressions in this way would require a way to embed nonterminals within the regular expressions, leading to added complexity. Such changes could also break compatibility with standard regular expression syntax.
 
-**Can't we just use \#except!(\<strings\>) to represent one token and treat it like a normal nonterminal?**
+**Can't we just use except!(\<strings\>) to represent one token and treat it like a normal nonterminal?**
 
 It won't work. Consider this hypothetical syntax:
 
@@ -194,5 +204,4 @@ Fortunately, considering the use cases, our theoretical API can be very simple:
 Designing a practical engine for constrained decoding is an exciting experience, revealing how many intricacies are involved in creating a library that, at first glance, appears straightforward. Most challenges stem from the our requirement that the engine must be *practical* for real-world applications. In the future, I plan to implement this design and will write a similar post on its implementation.
 
 [^1]: Regular expression in this post refers to the regular expression as it is defined in wikipedia. Many programming languages have extended regular expression to include features such as arbitrary lookarounds and recursion, which essentially turns it into context-free or context-sensitive languages and is almost impossible to implement efficiently.
-[^2]: Optional operators are already supported in the EBNF standard.
 [^3]: The standard exception symbol, per ISO standard, is a weird thing and has too much limitations to be useful.
