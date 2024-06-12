@@ -1,7 +1,7 @@
 ---
-title: Contact Me
+layout: default
 ---
-### Contact Me
+# Contact Me
 
 Feel free to reach out via email at [xs28@rice.edu](xs28@rice.edu). I read English and Chinese.
 
