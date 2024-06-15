@@ -201,7 +201,9 @@ Fortunately, considering the use cases, our theoretical API can be very simple:
 
 ## Conclusion
 
-Designing a practical engine for constrained decoding is an exciting experience, revealing how many intricacies are involved in creating a library that, at first glance, appears straightforward. Most challenges stem from the our requirement that the engine must be *practical* for real-world applications. In the future, I plan to implement this design and will write a similar post on its implementation.
+{% assign post = site.posts | where: "tag", "Implement CDE" | first %}
+
+Designing a practical engine for constrained decoding is an exciting experience, revealing how many intricacies are involved in creating a library that, at first glance, appears straightforward. Most challenges stem from the our requirement that the engine must be *practical* for real-world applications. I have written the implementation post [here]({{ post.url | relative_url }}).
 
 [^1]: Regular expression in this post refers to the regular expression as it is defined in wikipedia. Many programming languages have extended regular expression to include features such as arbitrary lookarounds and recursion, which essentially turns it into context-free or context-sensitive languages and is almost impossible to implement efficiently.
 [^3]: The standard exception symbol, per ISO standard, is a weird thing and has too much limitations to be useful.
