@@ -5,7 +5,7 @@ completed: true
 
 # Implementing a Constrained Decoding Engine for Structured Text Generation in Large Language Models
 
-{% assign post = site.posts | where: "title", "Designing a Constrained Decoding Engine for Structured Text Generation in Large Language Models" | first %}
+{% assign post = site.posts | where: "tag", "Design CDE" | first %}
 
 The code is available [here](https://github.com/Dan-Wanna-M/kbnf).
 
