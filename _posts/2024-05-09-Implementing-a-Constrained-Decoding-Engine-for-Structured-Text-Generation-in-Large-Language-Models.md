@@ -1,12 +1,13 @@
 ---
-title: "Implementing a Constrained Decoding Engine for Structured Text Generation in Large Language Models"
 date: 2024-05-05
-completed: false
+completed: true
 ---
 
 # Implementing a Constrained Decoding Engine for Structured Text Generation in Large Language Models
 
 {% assign post = site.posts | where: "title", "Designing a Constrained Decoding Engine for Structured Text Generation in Large Language Models" | first %}
+
+The code is available [here](https://github.com/Dan-Wanna-M/kbnf).
 
 I recommend checking out my previous post, [Designing a Constrained Decoding Engine for Structured Text Generation in Large Language Models]({{ post.url | relative_url }}), before reading this one if you haven't already.
 
@@ -28,7 +29,7 @@ If the requirements for efficiency and ease of embedding were lifted, virtually 
 
 ### `engine.initialize()`
 
-Implementing this method requires us to initialize the grammar, tokenizer's vocabulary and configuration first. While initializing the vocabulary and configuration is straightforward, initializing the grammar involves constructing certain data structures from the EBNF text to facilitate a more efficient implementation later on. Specifically, we want to create an [abstract syntax tree(AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of the EBNF, validate the AST, and then simplify the AST into what I term Loup's normal form (LNF)[^2].
+Implementing this method requires us to initialize the grammar, tokenizer's vocabulary and configuration first. While initializing the vocabulary and configuration is straightforward, initializing the grammar involves constructing certain data structures from the EBNF text to facilitate a more efficient implementation later on. Specifically, we want to create an [abstract syntax tree(AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of the EBNF, validate the AST, and then simplify the AST into High-level intermediate representation(HIR).
 
 #### Construct EBNF AST
 
@@ -47,7 +48,7 @@ It is possible for an EBNF snippet to be syntactically correct yet semantically 
 2. Invalid excepted nonterminals
     - All excepted nonterminals must directly contain nonempty terminals combined with concatneations and alternations[^6].
 
-#### Obtain LNF
+#### Obtain HIR
 
 This step is trickier. To make efficient implementation easier, we would like to do the following:
 
@@ -187,7 +188,7 @@ This step is trickier. To make efficient implementation easier, we would like to
         - For example, `A ::= B?;` is expanded to `A ::= B;`.
         - This procedure is similar to generating all possible combinations of nullable symbols in the production.
 
-The code implementing all the procedures described above is available in [my forked ebnf repository](https://github.com/Dan-wanna-M/ebnf)[^9].
+The code implementing all the procedures described above is available in [my forked ebnf repository](https://github.com/Dan-wanna-M/ebnf).
 
 ### `engine.modify_possible_logits()`
 
@@ -310,6 +311,7 @@ If you are unfamiliar with how the original Earley algorithm operates, I highly 
          earley_item.nonterminal, None)
         if leo_item is not None:
             earley_set.leo_items[earley_item.nonterminal] = leo_item
+            earley_complete(leo_item, earley_set)
             return True
         return False
 
@@ -334,7 +336,7 @@ If you are unfamiliar with how the original Earley algorithm operates, I highly 
 
   **Then the code will NOT work!** [This post](https://cs.stackexchange.com/questions/101770/leos-deterministic-reduction-for-earley-parsing) shows a counterexample.
 
-- **Use contiguous buffers for Earley sets and LNF**
+- **Use contiguous buffers for Earley sets and HIR**
 
     A naive implementation of Earley sets might utilize `Vec<Vec<T>>`, a 2D nested vector. However, this setup isn't optimal due to potential cache misses; the inner vectors’ buffers may not be allocated in one contiguous memory block.
 
@@ -380,7 +382,7 @@ If you are unfamiliar with how the original Earley algorithm operates, I highly 
 
     So why bother caching possible tokens? There are two main reasons:
 
-    1. **Simplicity of many grammars**: A significant number of grammars are not exceedingly complex. For example, regular grammars, left-recursive grammars, and right-recursive grammars can often be fully cached[^12], which is one reason tools like Outlines and Guidance initially supported only regular expressions.
+    1. **Simplicity of many grammars**: A significant number of grammars are not exceedingly complex. For example, regular grammars can always be fully cached, which is one reason tools like Outlines and Guidance initially supported only regular expressions.
 
     2. **Finite output length**: When the output length is finite, the number of states involved is also finite. Given that the same grammar is often reused to generate outputs of similar lengths, it is likely that the same states will be reached repeatedly, making caching effective.
 
@@ -390,14 +392,14 @@ If you are unfamiliar with how the original Earley algorithm operates, I highly 
 
     The actual caching algorithm is complex. Naively caching all Earley sets for a given input sequence is very inefficient. We need a method to compact Earley sets. For Earley sets `S(0), S(1), ..., S(m)`, we have the following observations:
 
-    1. All Earley sets `S(i)` for which `max(start position in D) < i < m` do not influence accepted bytes, where `D` consists of items in `S(m)` not created at `m`.
+    1. All Earley sets `S(i)` for which `n=max(start position in D) < i < m` do not influence accepted bytes, where `D` consists of items in `S(m)` not created at `m`.
     2. The start positions of items created at `S(m)` do not influence accepted bytes.
-    3. For any item `(nonterminal, start_position, ...)` in `S(m)`, if `S(start_position)` contains a Leo item corresponding to `nonterminal`, then the `start_position` can be changed to the Leo item's start position without affecting accepted bytes.
+    3. For any item `(nonterminal, start_position, ...)` in `S(m)`, if `S(start_position)` contains a Leo item corresponding to `nonterminal`, then the `start_position` can be changed to the Leo item's start position without affecting accepted bytes, given that the Leo item transition is still maintained.
 
     These observations lead to our compacting algorithm:
 
     1. Iterate over `S(m)` and apply observation 3 wherever possible.
-    2. Apply observation 1 to shift `S(m)` to position `n`.
+    2. Apply observation 1 to shift `S(m)` to position `n` and update Leo items.
     3. Adjust the start positions of items referred to in observation 2 to `n`.
 
     This compacted Earley set can then serve as an index in the cache. What's more, even if caching is disabled, this compacting algorithm might still be useful as it reduces memory usage on long inputs and possibly cache misses.
@@ -408,18 +410,37 @@ If you are unfamiliar with how the original Earley algorithm operates, I highly 
 
     It is theoretically possible to cache all states of Earley recognizer up to `m` input bytes. However, its time complexity is equivalent to enumerate all possible ASTs with inputs up to `m` bytes. I suspect this will only work for simple grammars or short inputs. Lazy mode sounds like a more reasonable default option.
 
+The other APIs are trivial to implement.
+
 ## Do we meet our goals?
 
-Let's revisit our goals and check whether we have met them.
+Let's revisit our goals to assess whether we have achieved them.
+
+### Users should be able to easily use the engine to specify commonly used formats or patterns
+
+Partially achieved. KBNF is straightforward to use, though it is not an out-of-the-box solution. To address this, I plan to develop a Python library called "Formatron" as a high-level wrapper for KBNF, aimed at achieving user-friendliness comparable to Outlines and Guidance.
+
+### The engine should implement formats in the most efficient way. In other words, if a user does not use extra expressiveness, then they should not incur unnecessary overhead
+
+Theoretically speaking, yes. We have successfully achieved linear time complexity for every LR(k) grammar and quadratic time complexity for every unambiguous grammar. For general context free grammar, things are more ambiguous(pun intended): while subcubic algorithms exist(although with a large constant), all other general-purpose parsing algorithms(like Earley, GLR, GLL...) are indeed cubic, like ours.
+
+Practically, it's always a work in progress. While significant efforts have been made to speed up the engine, there are still unexplored techniques such as SIMD, multithreading, GPU computing, and LR algorithms. I believe there is always room for improvement.
+
+### Users should have the flexibility to select their preferred options when implementation choices involve compromises
+
+Partially achieved. We have provided several configurable options, but it's possible that users may desire additional flexibility—such as support for dynamic grammars or parsing expression grammars. Gathering more user feedback will help us identify and implement the additional flexibility needed.
+
+## Conclusion
+
+Implementing a practical engine for constrained decoding is much more exciting than designing it, It challenges us to apply traditional computer science knowledge to new demands in the era of large language models.
+
+In the future, I plan to write a follow-up post on designing the Python library "Formatron."
 
 [^1]: Well, sort of. You can definitely argue that we also need user-friendly errors for our EBNF variant to enhance usability, and I think you are right. The problem is that the library does not have these features, and implementing these features are time-consuming, and hence I will omit them. At least for *now*.
-[^2]: The rationale behind this naming is because I only see this form in [Loup's blog](https://loup-vaillant.fr/tutorials/earley-parsing/recogniser). This is definitely not an academic term but to the best of my knowledge, I do not know if there exists a formal name.
 [^3]: Is this particularly useful? Maybe not. Does this affect implementation's efficiency? Definitely not. So if EBNF by definition allows it, why don't we allow it?
 [^4]: That's why I code all the steps before with a while loop and a stack on the heap.
 [^5]: This is the left recursion version. You may want the right recursion version. I prefer left recursion because I will use Earley Algorithm later.
 [^6]: It is technically possible to support more complex nonterminals that only contain terminals *after substituting all nonterminals and grouping*. However, this feature is harder to implement so I will leave it for *now*.
 [^7]: Well, not that *simple* if you, like me, do not want to use recursion and hate reference counting and unnecessary cloning.
 [^8]: Note that accepting an empty string at the beginning is useless in our context.
-[^9]: Maybe in the future I will publish it as a Rust crate.
 [^11]: After typing this down I realized I could support full regular expression as negative lookaheads easily. Whether that is a good design choice and how much interference it has on other optimizations are unclear though.
-[^12]: This is just a feeling. Maybe I am wrong.
