@@ -1,8 +1,9 @@
 theme: jekyll-theme-midnight
-author: Huanghe
+author: Xintong Sun
 description: Why touch grass when you can soar above it?
-title: Huanghe's blog
+title: Xintong Sun's blog
 url: "https://Dan-Wanna-M.github.io"
 baseurl: "/blog"
 highlighter: rouge
+
 layout: default
