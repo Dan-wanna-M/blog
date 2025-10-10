@@ -1,3 +1,3 @@
-# Huanghe's Blog
+# Xintong Sun's Blog
 
 Hosted [here](https://dan-wanna-m.github.io/blog/).
